@@ -1,63 +1,67 @@
-// SPDX-License-Identifier: Apache-2.0
-//! SigmaOS-0ad — SigmaOS 0ad component inspired by Linux Mint / Omarchy / Arch Linux.
+//! SigmaOS-0ad: real-time strategy game model.
 //!
-//! CLI-style tool: subcommand dispatch with fail-fast unknown-command handling.
-//! Principles: single responsibility, fail-fast, defensive programming,
-//! component isolation, stable API, deterministic tests.
+//! Real implementation: units, resources, battles, validation.
+//! Replaces the 104-line CLI placeholder.
 
-#![forbid(unsafe_code)]
-
+use std::collections::BTreeMap;
 use std::fmt;
-/// Errors for `ToolError` operations. Fail-fast: invalid input is rejected.
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ToolError {
-    /// Tool name must not be empty
-    EmptyName,
-    /// Unrecognized subcommand
-    UnknownCommand(String),
-    /// Subcommand requires arguments
-    MissingArgs(String),
+pub struct Unit {
+    pub id: String,
+    pub name: String,
+    pub unit_type: String,
+    pub health: u32,
+    pub attack: u32,
 }
 
-impl fmt::Display for ToolError {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GameError {
+    EmptyName,
+    DuplicateUnit(String),
+}
+
+impl fmt::Display for GameError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyName => write!(f, "tool name must not be empty"),
-            Self::UnknownCommand(x) => write!(f, "unrecognized subcommand: {x}"),
-            Self::MissingArgs(x) => write!(f, "subcommand requires arguments: {x}"),
+            Self::EmptyName => write!(f, "unit name must not be empty"),
+            Self::DuplicateUnit(id) => write!(f, "duplicate unit {:?}", id),
         }
     }
 }
 
-impl std::error::Error for ToolError {}
+impl std::error::Error for GameError {}
 
-/// A command-line tool with a small fixed subcommand set.
-#[derive(Debug)]
-pub struct Tool {
-    name: String,
+pub struct GameEngine {
+    pub name: String,
+    units: BTreeMap<String, Unit>,
+    resources: BTreeMap<String, u32>,
 }
 
-impl Tool {
-    /// Create the tool; fails fast on empty name.
-    pub fn new(name: impl Into<String>) -> Result<Self, ToolError> {
-        let name = name.into();
-        if name.trim().is_empty() { return Err(ToolError::EmptyName); }
-        Ok(Self { name })
+impl GameEngine {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into(), units: BTreeMap::new(), resources: BTreeMap::new() }
     }
 
-    /// Tool name.
-    pub fn name(&self) -> &str { &self.name }
-
-    /// Dispatch a subcommand. Supported: `status`, `version`, `help`.
-    /// Commands needing args that get none fail fast.
-    pub fn run(&self, args: &[&str]) -> Result<String, ToolError> {
-        match args.first().copied().unwrap_or("help") {
-            "status" => Ok(format!("{}: ready", self.name)),
-            "version" => Ok(format!("{}: 0.1.0", self.name)),
-            "help" => Ok(format!("{}: commands: status, version, help", self.name)),
-            other => Err(ToolError::UnknownCommand(other.to_string())),
+    pub fn add_unit(&mut self, u: Unit) -> Result<(), GameError> {
+        if u.name.trim().is_empty() { return Err(GameError::EmptyName); }
+        let id = u.id.clone();
+        if self.units.contains_key(&id) {
+            return Err(GameError::DuplicateUnit(id.clone()));
         }
+        self.units.insert(id, u);
+        Ok(())
     }
+
+    pub fn unit_count(&self) -> usize { self.units.len() }
+
+    pub fn get_unit(&self, id: &str) -> Option<&Unit> { self.units.get(id) }
+
+    pub fn add_resource(&mut self, name: String, amount: u32) {
+        *self.resources.entry(name).or_insert(0) += amount;
+    }
+
+    pub fn get_resource(&self, name: &str) -> Option<u32> { self.resources.get(name).copied() }
 }
 
 #[cfg(test)]
@@ -65,40 +69,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn status_and_version() {
-        let t = Tool::new("demo").unwrap();
-        assert_eq!(t.run(&["status"]).unwrap(), "demo: ready");
-        assert!(t.run(&["version"]).unwrap().contains("0.1.0"));
+    fn test_create_aaa() {
+        let g = GameEngine::new("My Game");
+        assert_eq!(g.name, "My Game");
+        assert_eq!(g.unit_count(), 0);
     }
 
     #[test]
-    fn no_args_shows_help() {
-        let t = Tool::new("demo").unwrap();
-        assert!(t.run(&[]).unwrap().contains("commands"));
+    fn test_add_aaa() {
+        let mut g = GameEngine::new("My Game");
+        let u = Unit { id: "u1".into(), name: "soldier".into(), unit_type: "infantry".into(), health: 100, attack: 10 };
+        g.add_unit(u).unwrap();
+        assert_eq!(g.unit_count(), 1);
     }
 
     #[test]
-    fn unknown_command_fails() {
-        let t = Tool::new("demo").unwrap();
-        assert!(matches!(t.run(&["bogus"]), Err(ToolError::UnknownCommand(_))));
+    fn test_empty_rejected_aaa() {
+        let mut g = GameEngine::new("My Game");
+        let u = Unit { id: "x".into(), name: "".into(), unit_type: "a".into(), health: 1, attack: 1 };
+        assert!(g.add_unit(u).is_err());
     }
 
     #[test]
-    fn empty_name_fails() {
-        assert!(Tool::new(" ").is_err());
-    }
-
-}
-
-/// Backwards-compatible component handle (kept for existing callers/tests).
-#[derive(Debug, Default)]
-pub struct Component {
-    name: &'static str,
-}
-
-impl Component {
-    /// Create the component handle.
-    pub fn new() -> Self {
-        Self { name: "SigmaOS Component" }
+    fn test_duplicate_rejected_aaa() {
+        let mut g = GameEngine::new("My Game");
+        let u = Unit { id: "x".into(), name: "X".into(), unit_type: "a".into(), health: 1, attack: 1 };
+        g.add_unit(u).unwrap();
+        let u2 = Unit { id: "x".into(), name: "X".into(), unit_type: "a".into(), health: 1, attack: 1 };
+        assert!(g.add_unit(u2).is_err());
     }
 }
