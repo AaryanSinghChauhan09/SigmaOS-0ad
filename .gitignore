@@ -1,4 +1,15 @@
+# SigmaOS .gitignore policy
+# *.md files (except README.md) are kept in GitHub Wikis, not main branch
+# This keeps repositories clean and follows the Omarchy Linux model
+
 /target
 Cargo.lock
 *.swp
 /target/
+
+# Wiki documentation - moved to GitHub Wikis
+# All .md files except README.md should be in Wikis, not tracked in git
+# If you need to add a new .md file, create a wiki entry instead
+
+# *.md
+# !README.md
